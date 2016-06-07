@@ -1,0 +1,137 @@
+--
+title: 'Practical Machine Learning Project'
+author: "Philip Short"
+output:
+  html_document:
+    keep_md: yes
+    toc: yes
+---
+
+```{r, echo=FALSE}
+message(sprintf("Run time: %s\nR version: %s", Sys.time(), R.Version()$version.string))
+```
+
+> **Background**
+
+>Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+
+### Summary
+
+The data set was reviewed after cleaning up the data and fitting a model.  The goal was to be able to have an accurate model to predict the class of the perfomed exersise. The class is the value giving to a correct bicep curl (A) and incorrect form (B-E). The RandomForest Prediction model was selected to predict the class (A-E) after comparison to the Gradient Boosting model.   Using the RandomForest model, a Kappa value of 0.995 and an accuracy of 0.996 was acchived.  The model was then used to determine the class of 20 bicep curls.  The model was able to correctly predict the class of the exercise. 
+
+### Prepare and cleaning the datasets
+
+Load the needed libraries for analysis. 
+
+```{r}
+library(data.table)
+library(caret)
+library(lattice)
+```
+
+Load the testing data into a data table.
+
+```{r}
+url1 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url1, destfile="pml-training.csv")
+url2 <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url2, destfile="pml-testing.csv")
+dataTrain <- read.csv("pml-training.csv", header=TRUE)
+dataTest <- read.csv("pml-testing.csv", header=TRUE)
+```
+Lets look at the data  that is going to be used from the pml-training.csv set.
+```{r}
+dim(dataTrain)
+```
+
+As it can be seen from the sample of data, some variables need to be removed from the model due to the high level of NAs and blanks that are contained.  For example, the summary below for var_total_accel belt shows that this variable should be removed for the model.
+
+```{r}
+summary(dataTrain$var_total_accel_belt)
+```
+
+```{r}
+removeNa <- is.na(dataTrain)
+removeColumns <- which(colSums(removeNa)>18000)
+dataTrain <- dataTrain[,-removeColumns]
+```
+
+
+Next, after excluding such values metioned above the data is cleaned up to remove unwanted coloumns.
+
+```{r}
+dataTidy <- dataTrain[,-c(grep("^amplitude|^kurtosis|^skewness|^avg|^cvtd_timestamp|^max|^min|^new_window|^raw_timestamp|^stddev|^var|^user_name|X",names(dataTrain)))]
+
+paste("Complete Cases:")
+
+table(complete.cases(dataTidy))
+dataTidy[1,]
+```
+As seen from one row from dataTidy, the Class variable is still present along with acceleromter data. This is the data we will use to build a predictive model. 
+
+###Data Splitting
+The tidy data will be split into a 60% training set and a 40% testing set.  The seed is set to 50. 
+
+```{r}
+set.seed(50)
+inTrain <- createDataPartition(y=dataTidy$classe,p=0.6,list=FALSE)
+dataTidyTrain <- dataTidy[inTrain,]
+dataTidyTest <- dataTidy[-inTrain,]
+```
+
+###Model Comparison and Selection 
+The goal of the comparison is to discover which algorithm suits the data better. The RandomForest (rf) and Gradient Boosting (gbm) algorithms are selected for comparison based on the accuracy these algorithms can achieve in classification. These 2 models have built-in feature selection as described in the Caret package reference. The Kappa metric is selected as the comparison criteria between the two models. To reduce the risk of overfitting, a 10-fold cross validation is used model building
+
+
+```{r}
+fitControl <- trainControl(method = "cv", number = 10)
+gbmFit <- train(classe~., data=dataTidyTrain, method="gbm", metric="Kappa", trControl=fitControl,verbose=FALSE)
+```
+
+```{r}
+rfFit <- train(classe~.,data=dataTidyTrain,method="rf", metric="Kappa", trControl=fitControl)
+```
+
+The models are then compared using the resamples function from the Caret package.
+
+```{r}
+rValues <- resamples(list(rf=rfFit,gbm=gbmFit))
+summary(rValues)
+```
+
+
+```{r}
+bwplot(rValues,metric="Kappa",main="RandomForest (rf) vs Gradient Boosting (gbm)")
+```
+
+ Based on the plot above, the RandomForest algorithm fares better than the Gradient Boosting algorithm for this dataset. The RandomForest algorithm  achieved a Kappa mean value of 0.996 compaired to 0.983 and also displays less spread than Gradient Boosting.
+
+
+### Model Validation
+The details of the RandomForest model are seen below.
+```{r}
+rfFit
+```
+
+Using the confusion matrix found inthe Caret package, the model iwth the test data set will be tested using the confusionMatrix function.
+
+```{r}
+confusionMatrix(dataTidyTest$classe, predict(rfFit,dataTidyTest))
+```
+The model generated performs at a Kappa value of 0.995 and an accuracy of 0.996 to the test data set. 
+
+
+### Final Testing
+Using the data provided, the model will be used to predict the 'classe' of the items. Qwer
+```{r}
+results <- predict(rfFit,newdata=dataTest)
+print(as.data.frame(results))
+```
+
+
+
+
+
+
